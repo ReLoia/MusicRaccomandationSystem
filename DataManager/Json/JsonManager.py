@@ -1,73 +1,123 @@
 import pandas as pd
 import numpy as np
+import logging
+import os
+import sys
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-from JsonValidator import JsonValidator
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(root_dir)
+from interfaces.JsonManagerInterface import JsonManagerInterface
+
+from Batch.BatchProcessor import BatchProcessor
+from DataManager.Json.JsonValidator import JsonValidator
+
+from abc import abstractmethod
 from typing import List, Dict, Optional
-from multiprocessing import Pool, cpu_count
 
 
-class JsonManager:
+class JsonManager(JsonManagerInterface):
+    instance = None
+
+    def __new__(cls, *args, **kwargs):
+
+        if cls.instance is None:
+            cls.instance = super().__new__(cls)
+            cls.instance._initialize = False
+        return cls.instance
+
     def __init__(self, batch_size):
+        if not self._initialize:
+            self.initialize(batch_size)
+        
+    def initialize(self, batch_size):
         self.json_validator = JsonValidator()
         self.batch_size = batch_size
         self.dataframe : Optional[pd.DateFrame] = None
+        self.batch_processor = BatchProcessor(2,5, self.get_instance())
+
+        self._initialize = True 
+
+    @classmethod
+    def get_instance(cls):
+        return cls.instance
 
     def process_song_data(self, songs_data : List[Dict]) -> None:
         
         """
-        Struttura le canzoni in batch e per ogni batch esegue il metodo process_song_batch
-        in parallelo.
-        Converte tutti i batch processati in un Daframe di pandas e richiama la 
+        Processa tutti i dati delle canzni utilizzando BatchProcessor
+        che sfrutta l'esecuzione di Batch paralleli
         """
-
-        batches = [songs_data[i:i+self.batch_size]
-                   for i in range(0, len(songs_data), self.batch_size)]
-        
-        with Pool(processes=cpu_count()) as pool:
-            processed_batches = pool.map(self.process_song_batch, batches)
-        
-        all_processed_songs = [song for batch in processed_batches for song in batch]
-
-        self.dataframe = pd.DateFrame(all_processed_songs)
-
-    def process_batch_song(self, batch_song : List[Dict]) -> List[Dict]:
-        """
-        Processa un singolo batch di canzoni, rende la struttura json
-        una struttura tabellare, più ottimizzata per i dataframe di pandas
-        """
-
-        songs_data = []
-
-        for song in batch_song:
+        try:
+            batches = [songs_data[i:i+self.batch_size]
+                    for i in range(0, len(songs_data), self.batch_size)]
+            logger.info(f'Avvio processamente di {len(batches)} batch')
             
-            song_validate_status = self.json_validator(song)
+            results = self.batch_processor.process_all_batch(
+                batches = batches,
+                start_from_batch = 0,
+            )
 
-            if song_validate_status == True:
+            all_processed_songs = []
+            for result in results:
+                if result.success:
+                    all_processed_songs.extend(result.data)
 
-                processed_song = {
-                    'son_id' : song['id'],
-                    'artis_name' : song['artist_name'],
-                    'genre' : song['genre'],
-                    'name' : song['name'],
-                    'duration_ms' : song['duration_ms'],
-                    'explicit' : 1 if song['explicit'] == True else 0,
-                    'release_date' : song['release_date'],
-                    'popularity' : song['popularity'],
-                    'danceability' : song['danceability'],
-                    'acousticness' : song['acousticness'],
-                    'energy' : song['energy'],
-                    'speechiness' : song['speechiness'],
-                    'valence' : song['valence'],
-                    'time_signature' : song['time_signature'],
-                    'mode' : song['mode'],
-                    'loudness' : song['loudness'],
-                    'key' : song['key'],
-                }
+            if all_processed_songs:
+                self.dataframe = pd.DataFrame(all_processed_songs)
+                logging.info(f'Dataframe creato con {len(all_processed_songs)} canzoni')
+            else:
+                logger.warning(f'Nessuna canzone processata con successo')
+        except Exception as e:
+            logger.error(f'Errore nel processo dei dati : {str(e)}')
 
-                songs_data.append(processed_song)
+    def process_batch(self, batch_data):
+        """"
+        Processa un singolo batch di canzoni, questa è
+        la funzione che viene passata al BatchProcessor
+        """
 
-        return songs_data
+        processed_songs = []
+        batch_songs = batch_data['data']
 
+        for song in batch_songs:
+            try:
+                processed_song = self.process_single_song(song)
+                if processed_song:
+                    processed_songs.append(processed_song)
+            except Exception as e:
+                logger.error(f'Errore nel processamente della canzone {str(e)}')
+
+    @classmethod
+    def process_single_song(self, song : List[Dict]) -> List[Dict]:
+        """
+        Processa una singola canzone, convertendo da JSON a formato tabellare.
+        """
+
+        song_validate_status = self.json_validator(song)
+
+        if song_validate_status == True:
+
+            return{
+                'son_id' : song['id'],
+                'artis_name' : song['artist_name'],
+                'genre' : song['genre'],
+                'name' : song['name'],
+                'duration_ms' : song['duration_ms'],
+                'explicit' : 1 if song['explicit'] == True else 0,
+                'release_date' : song['release_date'],
+                'popularity' : song['popularity'],
+                'danceability' : song['danceability'],
+                'acousticness' : song['acousticness'],
+                'energy' : song['energy'],
+                'speechiness' : song['speechiness'],
+                'valence' : song['valence'],
+                'time_signature' : song['time_signature'],
+                'mode' : song['mode'],
+                'loudness' : song['loudness'],
+                'key' : song['key'],
+            }
 
     def process_user_preferences(self, user_json):
         """"

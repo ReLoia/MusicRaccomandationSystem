@@ -1,6 +1,11 @@
 import logging
-from Error.ValidationError import ValidationError
 
+
+import os
+import sys
+root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(root_dir)
+from Error.dataclass.ValidationError import ValidationError
 
 class JsonValidator:
     def __init__(self):
