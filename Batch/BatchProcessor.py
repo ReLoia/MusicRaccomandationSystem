@@ -1,20 +1,19 @@
 import logging
 import os
-import threading
 import os
 import sys
-import concurrent.futures
+import traceback
+import concurrent
 
 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(root_dir)
 from Error.dataclass.ProcessingResultBatch import ProcessingResults
-#from BatchProcessingError import BatchProcessingError
-
+from Error.dataclass.BatchError import BatchError
+from Error.dataclass.BachErrorCollection import BatchErrorCollection
 from interfaces.BatchProcessorInterface import BatchProcessorInterface
 
 from typing import List, Dict
 from time import sleep
-from queue import Queue
 from multiprocessing import Manager, cpu_count
 from concurrent.futures import ThreadPoolExecutor
 
@@ -47,7 +46,7 @@ class BatchProcessor(BatchProcessorInterface):
 
         self.counter_lock = self.manager.Lock()
 
-        #self.batch_errors = BatchProcessingError()
+        self.error_collection = BatchErrorCollection()
 
         self._initialize = True
 
@@ -55,6 +54,24 @@ class BatchProcessor(BatchProcessorInterface):
     def get_instance(self, cls):
         return cls.instance
 
+    def create_error (self, e, batch_index, worker_id, attempt, context):
+        """
+        Metodo per creare oggetti BatchError con contest
+        """
+
+        return BatchError(
+            error_message = str(e),
+            error_type = type(e),
+            batch_index = batch_index,
+            worker_id = worker_id,
+            stack_trace = traceback.format_exc(),
+            attempt_number = attempt,
+            context = {
+                'max_retries' : self.max_retries,
+                'retry_delay': self.retry_delay,
+                **(context or {})
+            }
+        )
 
     def process_batch_with_retry(self, batch_data : List[Dict],):
         
@@ -89,8 +106,21 @@ class BatchProcessor(BatchProcessorInterface):
                         worker_id = worker_id
                     )
             except Exception as e:
-                last_error = str(e)
-                logger.warning(f'Tentativo {attempt} fallito per batch {batch_index}: {last_error}')
+                batch_error = self.create_error(
+                    str(e), batch_index, worker_id, attempt, {'batch_size': len(data), 'retry_attempt' : attempt}
+                )
+                self.error_collection.add_error(batch_error)
+
+                logger.error(
+                    f'Errore nel processamento del batch {batch_index}',
+                    extra={
+                        'error_details' : batch_error.to_dic(),
+                        'processor_state' : {
+                            'completed_batches' : self.completed_batches.value,
+                            'failed_batches' : self.failed_batches.value
+                        }
+                    }
+                )
 
                 if attempt < self.max_retries:
                     sleep(self.retry_delay)
@@ -98,7 +128,6 @@ class BatchProcessor(BatchProcessorInterface):
                 else:
                     self.failed_batches.value += 1
             attempt += 1
-        #self.batch_errors.register_batch_error(batch_index, str(last_error))
         return ProcessingResults(
             success = False,
             data = [],
@@ -136,6 +165,17 @@ class BatchProcessor(BatchProcessorInterface):
                             logger.info(f'Batch {result.batch_index} processato con successo')
                             results.append(result)
                     except Exception as e:
-                        logger.error(f'Errore di elaborazione batch: {str(e)}')
+                        error = self.create_error(e, batch_data['batch_index'], os.getpid(), 1, 
+                                                  {'phase' : 'Future processing'})
+                        self.error_collection.add_error(error)
+                        logging.error(f'Errore di preelaborazione del batch {batch_data['batch_index']},
+                                      extra = {'errore_details': error.to_dict()}')
         except Exception as e:
-            logging.error(f'Errore di elaborazione parallela dei batch: {str(e)}')
+            error = self.create_error(
+                            e, batch_data['batch_index'], os.getpid(), 1,
+                            {'phase' : 'parallel processing'}
+                        )
+            self.error_collection.add_error(error)
+            logging.error(f'Errore di elaborazione parallela del batch {batch_data['batch_index']},
+                            extra = {'errore_details': error.to_dict()}')
+            
