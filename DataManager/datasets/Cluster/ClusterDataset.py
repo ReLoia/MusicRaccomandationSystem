@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-from Json.JsonManager import JsonManager
+from ...Json.JsonManager import JsonManager
 
 class ClusterDataset:
     def __init__(self, json_manager):

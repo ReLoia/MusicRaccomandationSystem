@@ -9,7 +9,7 @@ root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(root_dir)
 from Error.dataclass.ProcessingResultBatch import ProcessingResults
 from Error.dataclass.BatchError import BatchError
-from Error.dataclass.BachErrorCollection import BatchErrorCollection
+from Error.dataclass.BatchErrorCollection import BatchErrorCollection
 from interfaces.BatchProcessorInterface import BatchProcessorInterface
 
 from typing import List, Dict
@@ -32,7 +32,7 @@ class BatchProcessor(BatchProcessorInterface):
     def __init__(self,max_retries, retry_delay, json_manager):
         if not self._initialize:
             self.initialize(max_retries, retry_delay, json_manager)
-    
+
     def initialize(self, max_retries, retry_delay, json_manager):
         self.max_retries = max_retries
         self.retry_delay = retry_delay
@@ -51,7 +51,7 @@ class BatchProcessor(BatchProcessorInterface):
         self._initialize = True
 
     @classmethod
-    def get_instance(self, cls):
+    def get_instance(cls):
         return cls.instance
 
     def create_error (self, e, batch_index, worker_id, attempt, context):
@@ -65,7 +65,8 @@ class BatchProcessor(BatchProcessorInterface):
             batch_index = batch_index,
             worker_id = worker_id,
             stack_trace = traceback.format_exc(),
-            attempt_number = attempt,
+            # attempt_number = attempt, TODO: rimosso perchè non presente in BatchError
+            # TODO: manca timestamp
             context = {
                 'max_retries' : self.max_retries,
                 'retry_delay': self.retry_delay,
@@ -74,7 +75,7 @@ class BatchProcessor(BatchProcessorInterface):
         )
 
     def process_batch_with_retry(self, batch_data : List[Dict],):
-        
+
         """"
         Processa i batch con meccanismo di retry
         """
@@ -91,14 +92,14 @@ class BatchProcessor(BatchProcessorInterface):
                 logger.info(f'Tentativo {attempt} per batch {batch_index}')
 
                 processed_data = self.json_manager.process_batch(data)
-                
+
                 if processed_data:
 
                     with self.counter_lock:
                         self.completed_batches.value += 1
 
                     return ProcessingResults(
-                        success = True,
+                        sucess=True,  # TODO: rinominare il campo sucess in success - forse è un errore di battitura?
                         data = processed_data,
                         error_type = None,
                         batch_index = batch_index,
@@ -129,14 +130,15 @@ class BatchProcessor(BatchProcessorInterface):
                     self.failed_batches.value += 1
             attempt += 1
         return ProcessingResults(
-            success = False,
+            # TODO: rinominare il campo sucess in success - forse è un errore di battitura?
+            sucess=False,
             data = [],
             error_type = str(last_error),
             batch_index = batch_index,
             attempt = attempt - 1,
             worker_id = worker_id
         )
-    
+
 
     def process_all_batch(self, batches, start_from_batch: int):
         #self.batch_errors.set_total_batches(len(batches))
@@ -161,21 +163,22 @@ class BatchProcessor(BatchProcessorInterface):
 
                     try:
                         result = future.result()
-                        if result.success:
+                        if result.sucess:
                             logger.info(f'Batch {result.batch_index} processato con successo')
                             results.append(result)
                     except Exception as e:
-                        error = self.create_error(e, batch_data['batch_index'], os.getpid(), 1, 
+                        error = self.create_error(e, batch_data['batch_index'], os.getpid(), 1,
                                                   {'phase' : 'Future processing'})
                         self.error_collection.add_error(error)
-                        logging.error(f'Errore di preelaborazione del batch {batch_data['batch_index']},
-                                      extra = {'errore_details': error.to_dict()}')
+                        logging.error(f'Errore di preelaborazione del batch {batch_data['batch_index']}',
+                                      extra={'errore_details': error.to_dict()})
         except Exception as e:
             error = self.create_error(
-                            e, batch_data['batch_index'], os.getpid(), 1,
-                            {'phase' : 'parallel processing'}
-                        )
+                e, batch_data['batch_index'], os.getpid(), 1,
+                {'phase': 'parallel processing'}
+            )
             self.error_collection.add_error(error)
-            logging.error(f'Errore di elaborazione parallela del batch {batch_data['batch_index']},
-                            extra = {'errore_details': error.to_dict()}')
-            
+            logging.error(f'Errore di elaborazione parallela del batch {batch_data['batch_index']}',
+                          extra={'errore_details': error.to_dict()})
+
+        return results

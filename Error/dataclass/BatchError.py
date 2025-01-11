@@ -1,4 +1,5 @@
-from dataclass import dataclass, field
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Dict, Optional
 
 @dataclass
@@ -30,7 +31,7 @@ class BatchError:
             'attempt' : self.attempt,
             'context' : self.context
         }
-    
+
     def get_error_indetifier(self) -> str:
         """
         Restituisce un identificativo univoco per l'errore

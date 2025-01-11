@@ -14,7 +14,7 @@ from Batch.BatchProcessor import BatchProcessor
 from DataManager.Json.JsonValidator import JsonValidator
 
 from abc import abstractmethod
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 
 class JsonManager(JsonManagerInterface):
@@ -28,32 +28,31 @@ class JsonManager(JsonManagerInterface):
         return cls.instance
 
     def __init__(self, batch_size):
-        if not self._initialize:
-            self.initialize(batch_size)
-        
-    def initialize(self, batch_size):
         self.json_validator = JsonValidator()
         self.batch_size = batch_size
         self.dataframe : Optional[pd.DateFrame] = None
         self.batch_processor = BatchProcessor(2,5, self.get_instance())
 
-        self._initialize = True 
+        self._initialize = True
+
+    def initialize(self, batch_size):
+        pass
 
     @classmethod
     def get_instance(cls):
         return cls.instance
 
     def process_song_data(self, songs_data : List[Dict]) -> None:
-        
+
         """
-        Processa tutti i dati delle canzni utilizzando BatchProcessor
+        Processa tutti i dati delle canzoni utilizzando BatchProcessor
         che sfrutta l'esecuzione di Batch paralleli
         """
         try:
             batches = [songs_data[i:i+self.batch_size]
-                    for i in range(0, len(songs_data), self.batch_size)]
+                       for i in range(0, len(songs_data), self.batch_size)]
             logger.info(f'Avvio processamente di {len(batches)} batch')
-            
+
             results = self.batch_processor.process_all_batch(
                 batches = batches,
                 start_from_batch = 0,
@@ -70,6 +69,10 @@ class JsonManager(JsonManagerInterface):
             else:
                 logger.warning(f'Nessuna canzone processata con successo')
         except Exception as e:
+            import traceback
+
+            traceback.print_exc()
+            
             logger.error(f'Errore nel processo dei dati : {str(e)}')
 
     def process_batch(self, batch_data):
@@ -79,7 +82,7 @@ class JsonManager(JsonManagerInterface):
         """
 
         processed_songs = []
-        batch_songs = batch_data['data']
+        batch_songs = batch_data
 
         for song in batch_songs:
             try:
@@ -89,17 +92,15 @@ class JsonManager(JsonManagerInterface):
             except Exception as e:
                 logger.error(f'Errore nel processamente della canzone {str(e)}')
 
-    @classmethod
-    def process_single_song(self, song : List[Dict]) -> List[Dict]:
+    def process_single_song(self, song: List[Dict]) -> dict[str | Any, int | Any]:
         """
         Processa una singola canzone, convertendo da JSON a formato tabellare.
         """
 
-        song_validate_status = self.json_validator(song)
+        song_validate_status = self.json_validator.validate_song(song)
 
         if song_validate_status == True:
-
-            return{
+            return {
                 'son_id' : song['id'],
                 'artis_name' : song['artist_name'],
                 'genre' : song['genre'],
@@ -124,14 +125,14 @@ class JsonManager(JsonManagerInterface):
         Processa lo storico degli ascolti di un utente e crea un profilo
         e crea un profilo dell'utente
         
-        """ 
+        """
 
         user_history = {
             'user_id' : user_json['id'],
             'listening_song' : [self.process_song_data(song) for song in user_json['history']]
         }
-    
+
         return user_history
-    
+
     def get_dataset(self):
         return self.dataframe

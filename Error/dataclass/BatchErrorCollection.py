@@ -1,16 +1,17 @@
-from dataclass import dataclass, field
-from typing import Dict, Optional, List
+import json
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Dict, List
+
 from .BatchError import BatchError
 
-import json
 
 @dataclass
 class BatchErrorCollection:
     total_batches : int = 0
     error : List[BatchError] = field(default_factory = list)
     erorrs_counts : Dict[str, int] = field(default_factory = list)
-    start_time = datetime = field(default_factory = list)
+    start_time: datetime = field(default_factory=list)
 
     def add_error(self, error : BatchError) -> None:
         """
@@ -36,11 +37,11 @@ class BatchErrorCollection:
     def get_errors_by_type(self, error_type: str) -> List[BatchError]:
         """Recupera tutti gli errori di un determinato tipo"""
         return [error for error in self.errors if error.error_type == error_type]
-    
+
     def get_errors_for_batch(self, batch_index: int) -> List[BatchError]:
         """Recupera tutti gli errori associati a un determinato batch"""
         return [error for error in self.errors if error.batch_index == batch_index]
-    
+
     def to_json(self, file_path: str) -> None:
         """Salva la collezione di errori in un file JSON"""
         with open(file_path, 'w') as f:
@@ -51,6 +52,7 @@ class BatchErrorCollection:
                 'errors': [error.to_dict() for error in self.errors],
                 'error_counts': self.error_counts,
                 'critical_errors': len(self.get_critical_errors())
+                # TODO: implementare get_critical_errors? non è definito in BatchErrorCollection
             }, f, indent=2)
 
     def clear_resolved_errors(self) -> None:

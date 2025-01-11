@@ -85,7 +85,7 @@ class JsonValidator:
             value=value,
             expected=expected
         )
-    
+
     def validate_values_song(self, song_data):
 
         """
@@ -100,7 +100,7 @@ class JsonValidator:
 
         errors = []
 
-        for field, (min_val, max_val) in self.song_schema['values_ranges'].items():
+        for field, (min_val, max_val) in self.song_schema['value_ranges'].items():
             try:
                 value = song_data[field]
 
@@ -114,12 +114,12 @@ class JsonValidator:
                     errors.append(self.setting_error(
                         field, 'out_of_range', f'valore fuori range per {field}', value, f'valore tra {min_val} e {max_val}'
                     ))
-                    
+
             except KeyError:
                 errors.append(self.setting_error(
-                        field, 'missing_field', f'Campo mancante : {field}', None, f'valore tra {min_val} e {max_val}'
-                    ))
-                
+                    field, 'missing_field', f'Campo mancante : {field}', None, f'valore tra {min_val} e {max_val}'
+                ))
+
             except Exception as e:
                 self.logger.error(f'Errore inaspettate durande la validazione di {field} : {str(e)}')
                 errors.append(self.setting_error(
@@ -127,14 +127,14 @@ class JsonValidator:
                 ))
 
         if errors:
-            for error in error:
+            for error in errors:
                 self.logger.warning(
                     f'Errore di validazione valori : {error.field} - {error.message}'
                 )
-            
+
             return False, errors
 
-        return True
+        return True, errors
 
     def validate_field_type_song(self, song_data):
 
@@ -178,25 +178,26 @@ class JsonValidator:
 
         try:
             if not song_data['release_date']:
-                errors.append(self.validate_data(
+                errors.append(self.validate_data(  # TODO: manca la definizione di validate_data
                     'release_date', 'missing_field', f'Campo mancante : release_date', None, f'Una data'
                 ))
         except ValueError as e:
             self.logger.error(f'Errore nel formato della data in {song_data['release_date']} : {str(e)}')
-            errors.append(self.validate_data(
-                    'release_date', 'unvalid_format', f'Formato non valido per release_date', song_data['release_date'], f'Una data'
-                ))
+            errors.append(self.validate_data(  # TODO: manca la definizione di validate_data
+                'release_date', 'unvalid_format', f'Formato non valido per release_date', song_data['release_date'],
+                f'Una data'
+            ))
 
         if errors:
-            for error in error:
+            for error in errors:
                 self.logger.warning(
                     f'Errore di validazione valori : {error.field} - {error.message}'
                 )
-            
+
             return False, errors
 
-        return True
-    
+        return True, errors
+
     def validate_song(self, song_data):
 
         """
@@ -218,6 +219,6 @@ class JsonValidator:
         if all_errors:
             self.logger.error(f'Validazione fallita con {len(all_errors)} errori')
             return False
-        
+
         self.logger.info('Validazione completata con successo')
         return True
